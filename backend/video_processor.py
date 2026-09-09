@@ -1,5 +1,5 @@
 import os
-from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip, CompositeVideoClip, CompositeAudioClip, concatenate_videoclips
+from moviepy import VideoFileClip, AudioFileClip, ImageClip, CompositeVideoClip, CompositeAudioClip, concatenate_videoclips
 from moviepy.video.fx import speedx, fadein, fadeout, mirror_x, mirror_y, colorx
 from moviepy.audio.fx import volumex
 
