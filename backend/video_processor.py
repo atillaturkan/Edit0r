@@ -1,92 +1,95 @@
 import os
-from moviepy.editor import (
-    VideoFileClip, AudioFileClip, ImageClip,
-    CompositeVideoClip, CompositeAudioClip, concatenate_videoclips,
-    vfx, ColorClip, TextClip
-)
+from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip, CompositeVideoClip, CompositeAudioClip, concatenate_videoclips
+from moviepy.video.fx import speedx, fadein, fadeout, mirror_x, mirror_y, colorx
+from moviepy.audio.fx import volumex
 
-def apply_effect(clip, effect_name, params=None):
+def process_video(video_items, logo_data_list, audio_data_list, output_path):
     """
-    Bir video klibe efekt uygular.
-    effect_name: 'black_white', 'sepia', 'invert', 'brightness', 'speed'
-    params: dict (örneğin {'factor': 0.5} için brightness, {'speed': 2.0} için hız)
+    video_items: List of dicts:
+        {
+            'path': str,
+            'speed': float (0.5 - 2.0),
+            'volume': float (0.0 - 2.0),
+            'fade_in': float (saniye),
+            'fade_out': float (saniye),
+            'rotate': int (0, 90, 180, 270),
+            'flip': str ('none', 'horizontal', 'vertical'),
+            'brightness': float (-1.0 - 1.0)
+        }
     """
-    if effect_name == 'black_white':
-        return clip.fx(vfx.blackwhite)
-    elif effect_name == 'sepia':
-        return clip.fx(vfx.colorx, 0.4)  # Basit sepya yaklaşımı
-    elif effect_name == 'invert':
-        return clip.fx(vfx.invert_colors)
-    elif effect_name == 'brightness':
-        factor = params.get('factor', 1.0) if params else 1.0
-        return clip.fx(vfx.colorx, factor)
-    elif effect_name == 'speed':
-        speed = params.get('speed', 1.0) if params else 1.0
-        if speed != 1.0:
-            new_dur = clip.duration / speed
-            return clip.fx(vfx.speedx, speed).set_duration(new_dur)
-        return clip
-    return clip
-
-def add_transition(clip1, clip2, duration=0.5):
-    """
-    İki klip arasına yumuşak geçiş (fade in/out) ekler.
-    """
-    clip1 = clip1.crossfadeout(duration)
-    clip2 = clip2.crossfadein(duration)
-    # Clip'leri üst üste getirip birleştir
-    from moviepy.editor import CompositeVideoClip
-    overlapped = CompositeVideoClip([clip1, clip2.set_start(clip1.duration - duration)])
-    return overlapped
-
-def process_video(video_paths, logo_data_list, audio_data_list, text_data_list, output_path, effect_settings=None):
-    """
-    Yeni gelişmiş süreç:
-    - video_paths: Liste (her video için ayrı efekt ve hız ayarı yapılabilir)
-    - logo_data_list: [{path, start, end}]
-    - audio_data_list: [{path, start, end, volume}]
-    - text_data_list: [{text, start, end, fontsize, color, animation}]
-    - effect_settings: Her video için dict: {'effect': 'black_white', 'speed': 1.5} vb.
-    """
-    if not video_paths:
-        raise Exception("En az bir video gerekli.")
-
+    if not video_items:
+        raise Exception("Hiç video yüklenmedi.")
+    
     clips = []
-    for i, v_path in enumerate(video_paths):
+    for v_data in video_items:
+        v_path = v_data['path']
+        if not os.path.exists(v_path):
+            raise Exception(f"Dosya bulunamadı: {v_path}")
+        
         clip = VideoFileClip(v_path)
-        # Efekt uygula (eğer ayar varsa)
-        if effect_settings and i < len(effect_settings):
-            settings = effect_settings[i]
-            # Hız ayarı önce yapılır (süreyi değiştirir)
-            if 'speed' in settings and settings['speed'] != 1.0:
-                clip = apply_effect(clip, 'speed', {'speed': settings['speed']})
-            # Görsel efektler (renk işlemleri)
-            if 'effect' in settings and settings['effect']:
-                clip = apply_effect(clip, settings['effect'])
+        
+        # 1. Hız Efekti (Speed)
+        speed = v_data.get('speed', 1.0)
+        if speed != 1.0 and speed > 0:
+            clip = clip.fx(speedx.speedx, speed)
+            # Ses hızını da değiştir
+            if clip.audio is not None:
+                clip.audio = clip.audio.fx(speedx.speedx, speed)
+        
+        # 2. Ses Seviyesi (Volume)
+        volume = v_data.get('volume', 1.0)
+        if volume != 1.0 and clip.audio is not None:
+            clip.audio = clip.audio.fx(volumex.volumex, volume)
+        
+        # 3. Fade In (Açılış Kararması)
+        fade_in_dur = v_data.get('fade_in', 0)
+        if fade_in_dur > 0:
+            clip = clip.fx(fadein.fadein, fade_in_dur)
+        
+        # 4. Fade Out (Kapanış Kararması)
+        fade_out_dur = v_data.get('fade_out', 0)
+        if fade_out_dur > 0:
+            clip = clip.fx(fadeout.fadeout, fade_out_dur)
+        
+        # 5. Döndürme (Rotate)
+        rotate_angle = v_data.get('rotate', 0)
+        if rotate_angle != 0:
+            clip = clip.rotate(rotate_angle)
+        
+        # 6. Aynalama (Flip)
+        flip_mode = v_data.get('flip', 'none')
+        if flip_mode == 'horizontal':
+            clip = clip.fx(mirror_x.mirror_x)
+        elif flip_mode == 'vertical':
+            clip = clip.fx(mirror_y.mirror_y)
+        
+        # 7. Parlaklık (Brightness)
+        brightness = v_data.get('brightness', 0)
+        if brightness != 0:
+            # brightness -1 ile 1 arasında, bunu 0.5 ile 2.0 arasına çevirelim
+            factor = 1.0 + brightness  # -1->0, 0->1, 1->2
+            if factor > 0:
+                clip = clip.fx(colorx.colorx, factor)
+        
         clips.append(clip)
-
-    # Geçişler (fade) ekle - her iki video arasına 0.5 saniye
-    final_clips = []
-    for i, c in enumerate(clips):
-        if i > 0:
-            # Geçişli birleştirme (crossfade)
-            prev = clips[i-1]
-            merged = add_transition(prev, c, duration=0.5)
-            # Ama bu yöntem tüm listeyi yeniden oluşturmayı gerektirir, pratikte tüm klipleri tek tek geçişle bağla
-            # Bunun için moviepy'nin 'concatenate' ine crossfade parametresi vermek daha iyi
-            # Kısa yol: her klibe standart fade in/out ekleyip sonra concatenate
-            c = c.fx(vfx.fadein, 0.3).fx(vfx.fadeout, 0.3)
-            # Ama bu sadece baş ve sona ekler, ara geçiş için crossfade gerekir.
-            # Burada basitlik için sadece fade in/out ekleyip geçiyoruz.
-
-    # Daha basit bir yaklaşım: tüm klipleri listele, hepsine başta ve sonda fade ekle, sonra birleştir.
-    # Ama efektif crossfade için aşağıdaki döngüyü kullan:
-    # (Not: Bu kod kısa ve anlaşılır olsun diye basitleştirildi)
-    from moviepy.editor import concatenate_videoclips
-    final_video = concatenate_videoclips(clips, method="compose")
+    
+    # Tüm videoları ilk videonun FPS ve çözünürlüğüne uyumlu hale getir
+    target_fps = clips[0].fps
+    target_size = clips[0].size
+    
+    resized = []
+    for c in clips:
+        if c.size != target_size:
+            c = c.resize(target_size)
+        if c.fps != target_fps:
+            c = c.set_fps(target_fps)
+        resized.append(c)
+    
+    # Videoları birleştir
+    final_video = concatenate_videoclips(resized, method="compose")
     total_duration = final_video.duration
 
-    # --- Logo Ekleme (aynı) ---
+    # --- LOGO EKLE (Overlay) ---
     overlays = [final_video]
     for logo in logo_data_list:
         try:
@@ -97,17 +100,22 @@ def process_video(video_paths, logo_data_list, audio_data_list, text_data_list, 
             dur = min(end, total_duration) - start
             if dur <= 0:
                 continue
-            img = ImageClip(logo['path'], transparent=True).resize(height=150)
-            img = img.set_start(start).set_duration(dur).set_position(('center', 'top'))
-            overlays.append(img)
-        except:
-            pass
+            
+            img_clip = ImageClip(logo['path'], transparent=True)
+            img_clip = img_clip.resize(height=150)
+            img_clip = img_clip.set_start(start).set_duration(dur)
+            img_clip = img_clip.set_position(('center', 'top'))
+            overlays.append(img_clip)
+        except Exception as e:
+            print(f"Logo hatası: {e}")
+    
     final_video = CompositeVideoClip(overlays)
 
-    # --- Ses Ekleme (aynı) ---
+    # --- SES KATMANLARI (Arkaplan müzikleri + Video sesleri) ---
     audio_tracks = []
-    if final_video.audio:
+    if final_video.audio is not None:
         audio_tracks.append(final_video.audio)
+    
     for audio in audio_data_list:
         try:
             start = audio['start']
@@ -117,55 +125,29 @@ def process_video(video_paths, logo_data_list, audio_data_list, text_data_list, 
             dur = min(end, total_duration) - start
             if dur <= 0:
                 continue
-            aclip = AudioFileClip(audio['path']).set_start(start).set_duration(dur)
-            aclip = aclip.volumex(audio.get('volume', 1.0))
-            audio_tracks.append(aclip)
-        except:
-            pass
+            
+            aud_clip = AudioFileClip(audio['path'])
+            aud_clip = aud_clip.set_start(start).set_duration(dur)
+            aud_clip = aud_clip.volumex(audio.get('volume', 1.0))
+            audio_tracks.append(aud_clip)
+        except Exception as e:
+            print(f"Ses hatası: {e}")
+    
     if audio_tracks:
         final_audio = CompositeAudioClip(audio_tracks)
         final_video = final_video.set_audio(final_audio)
 
-    # --- Metin Animasyonu (YENİ) ---
-    if text_data_list:
-        for txt in text_data_list:
-            try:
-                start = txt['start']
-                end = txt['end']
-                if start >= total_duration:
-                    continue
-                dur = min(end, total_duration) - start
-                if dur <= 0:
-                    continue
-                # Metin clip'i
-                text_clip = TextClip(
-                    txt['text'],
-                    fontsize=txt.get('fontsize', 40),
-                    color=txt.get('color', 'white'),
-                    stroke_color='black',
-                    stroke_width=2,
-                    method='label',
-                    font='Arial'
-                ).set_start(start).set_duration(dur)
-                # Animasyon: 'slide' ise soldan sağa kayar
-                if txt.get('animation') == 'slide':
-                    text_clip = text_clip.set_position(lambda t: ('left', 'center')).set_duration(dur)
-                    # gerçek slide için position'ı zamana göre hareket ettir
-                    # Basitçe başlangıçta solda, sonunda ortada
-                    def pos_func(t):
-                        # t 0'dan dur'a kadar, x -200'den 0'a (merkeze)
-                        x = -200 + (t / dur) * 200
-                        return (x, 'center')
-                    text_clip = text_clip.set_position(pos_func)
-                else:
-                    # sabit orta-üst
-                    text_clip = text_clip.set_position(('center', 'top'))
-                final_video = CompositeVideoClip([final_video, text_clip])
-            except:
-                pass
-
-    # Dışa aktar
-    final_video.write_videofile(output_path, codec='libx264', audio_codec='aac', fps=24, verbose=False, logger=None)
+    # --- DIŞA AKTAR ---
+    final_video.write_videofile(
+        output_path, 
+        codec='libx264', 
+        audio_codec='aac', 
+        fps=target_fps, 
+        verbose=False, 
+        logger=None
+    )
+    
+    # Temizlik
     for c in clips:
         c.close()
     final_video.close()
