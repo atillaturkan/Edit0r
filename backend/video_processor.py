@@ -1,7 +1,7 @@
 import os
-from moviepy import VideoFileClip, AudioFileClip, ImageClip, CompositeVideoClip, CompositeAudioClip, concatenate_videoclips
-from moviepy.video.fx import speedx, fadein, fadeout, mirror_x, mirror_y, colorx
-from moviepy.audio.fx import volumex
+from moviepy import VideoFileClip, AudioFileClip, ImageClip
+from moviepy.video.composite import CompositeVideoClip, CompositeAudioClip
+from moviepy.video.compositing.concatenate import concatenate_videoclips
 
 def process_video(video_items, logo_data_list, audio_data_list, output_path):
     """
